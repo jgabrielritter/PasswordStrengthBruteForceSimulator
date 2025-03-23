@@ -1,0 +1,340 @@
+import string
+import time
+import random
+import itertools
+from datetime import datetime
+
+class DummyLoginSystem:
+    """A dummy login system that can be used to test password strength."""
+    
+    def __init__(self, real_password):
+        self.real_password = real_password
+        self.login_attempts = 0
+        
+    def attempt_login(self, password_guess):
+        """Simulate a login attempt with the given password."""
+        self.login_attempts += 1
+        return password_guess == self.real_password
+        
+    def get_attempts(self):
+        """Return the number of login attempts made."""
+        return self.login_attempts
+
+def brute_force_sequential(login_system, char_set, max_length):
+    """
+    Attempt a brute force attack using sequential combinations of characters.
+    
+    Args:
+        login_system: The login system to attack
+        char_set: The set of characters to use
+        max_length: The maximum password length to try
+        
+    Returns:
+        tuple: (success, password, attempts, time_taken)
+    """
+    start_time = time.time()
+    
+    # Try passwords of different lengths
+    for length in range(1, max_length + 1):
+        print(f"Trying passwords of length {length}...")
+        
+        # Generate all possible combinations of the given length
+        for combo in itertools.product(char_set, repeat=length):
+            password_guess = ''.join(combo)
+            
+            if login_system.attempt_login(password_guess):
+                end_time = time.time()
+                return True, password_guess, login_system.get_attempts(), end_time - start_time
+                
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
+
+def dictionary_attack(login_system, dictionary_file):
+    """
+    Attempt a dictionary attack using a list of common passwords.
+    
+    Args:
+        login_system: The login system to attack
+        dictionary_file: Path to a file containing common passwords
+        
+    Returns:
+        tuple: (success, password, attempts, time_taken)
+    """
+    start_time = time.time()
+    
+    try:
+        with open(dictionary_file, 'r') as f:
+            for line in f:
+                password_guess = line.strip()
+                
+                if login_system.attempt_login(password_guess):
+                    end_time = time.time()
+                    return True, password_guess, login_system.get_attempts(), end_time - start_time
+    except FileNotFoundError:
+        print(f"Dictionary file '{dictionary_file}' not found.")
+        
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
+
+def hybrid_attack(login_system, base_words, max_variations=100):
+    """
+    Attempt a hybrid attack combining dictionary words with common variations.
+    
+    Args:
+        login_system: The login system to attack
+        base_words: List of base words to try variations of
+        max_variations: Maximum number of variations to try per word
+        
+    Returns:
+        tuple: (success, password, attempts, time_taken)
+    """
+    start_time = time.time()
+    
+    # Common substitutions (leet speak)
+    substitutions = {
+        'a': ['a', 'A', '@', '4'],
+        'e': ['e', 'E', '3'],
+        'i': ['i', 'I', '1', '!'],
+        'o': ['o', 'O', '0'],
+        's': ['s', 'S', '$', '5'],
+        't': ['t', 'T', '7'],
+    }
+    
+    # Common additions
+    common_additions = ['', '123', '1234', '12345', '!', '123!', 'password', '2023', '2024']
+    
+    for base_word in base_words:
+        # Try the base word first
+        if login_system.attempt_login(base_word):
+            end_time = time.time()
+            return True, base_word, login_system.get_attempts(), end_time - start_time
+        
+        # Try with common additions
+        for addition in common_additions:
+            password_guess = base_word + addition
+            if login_system.attempt_login(password_guess):
+                end_time = time.time()
+                return True, password_guess, login_system.get_attempts(), end_time - start_time
+        
+        # Try some random variations with substitutions
+        variations_tried = 0
+        base_chars = list(base_word)
+        
+        while variations_tried < max_variations:
+            # Create a variation by randomly substituting characters
+            variation = base_word
+            for i, char in enumerate(base_chars):
+                if char.lower() in substitutions and random.random() < 0.3:
+                    substitution = random.choice(substitutions[char.lower()])
+                    variation = variation[:i] + substitution + variation[i+1:]
+            
+            # Add a common suffix
+            variation += random.choice(common_additions)
+            
+            if login_system.attempt_login(variation):
+                end_time = time.time()
+                return True, variation, login_system.get_attempts(), end_time - start_time
+            
+            variations_tried += 1
+    
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
+
+def test_password_strength(password, max_length=4, attack_types=None):
+    """
+    Test the strength of a password by attempting various attacks.
+    
+    Args:
+        password: The password to test
+        max_length: Maximum length for brute force attempts
+        attack_types: List of attack types to try (default: all)
+        
+    Returns:
+        dict: Results of the attacks
+    """
+    if attack_types is None:
+        attack_types = ['sequential', 'sequential_limited', 'dictionary', 'hybrid']
+    
+    results = {}
+    
+    print(f"\nTesting password strength for: '{password}'")
+    print("-" * 50)
+    
+    if 'sequential' in attack_types:
+        print("\nAttempting sequential brute force with full character set...")
+        login_system = DummyLoginSystem(password)
+        char_set = string.ascii_lowercase + string.ascii_uppercase + string.digits + string.punctuation
+        success, found_password, attempts, time_taken = brute_force_sequential(login_system, char_set, max_length)
+        
+        results['sequential'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"Password cracked: '{found_password}'")
+        else:
+            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+    
+    if 'sequential_limited' in attack_types:
+        print("\nAttempting sequential brute force with limited character set...")
+        login_system = DummyLoginSystem(password)
+        char_set = string.ascii_lowercase + string.digits
+        success, found_password, attempts, time_taken = brute_force_sequential(login_system, char_set, max_length)
+        
+        results['sequential_limited'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"Password cracked: '{found_password}'")
+        else:
+            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+    
+    if 'dictionary' in attack_types:
+        print("\nSimulating dictionary attack...")
+        login_system = DummyLoginSystem(password)
+        
+        # Create a mini dictionary for demonstration purposes
+        with open('temp_dictionary.txt', 'w') as f:
+            common_passwords = [
+                'password', '123456', 'qwerty', 'admin', 'welcome',
+                'login', 'abc123', 'letmein', 'master', 'hello',
+                'monkey', 'password123', 'test', 'football', 'baseball'
+            ]
+            f.write('\n'.join(common_passwords))
+        
+        success, found_password, attempts, time_taken = dictionary_attack(login_system, 'temp_dictionary.txt')
+        
+        results['dictionary'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"Password cracked: '{found_password}'")
+        else:
+            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+    
+    if 'hybrid' in attack_types:
+        print("\nAttempting hybrid attack...")
+        login_system = DummyLoginSystem(password)
+        base_words = ['admin', 'user', 'login', 'password', 'welcome', 'secure']
+        success, found_password, attempts, time_taken = hybrid_attack(login_system, base_words)
+        
+        results['hybrid'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"Password cracked: '{found_password}'")
+        else:
+            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+    
+    # Calculate overall strength score
+    successful_attacks = sum(1 for attack_result in results.values() if attack_result['success'])
+    total_attacks = len(results)
+    
+    if total_attacks > 0:
+        strength_score = (total_attacks - successful_attacks) / total_attacks * 10
+    else:
+        strength_score = 0
+        
+    # Qualitative rating
+    if strength_score >= 9:
+        rating = "Excellent"
+    elif strength_score >= 7:
+        rating = "Good"
+    elif strength_score >= 5:
+        rating = "Fair"
+    elif strength_score >= 3:
+        rating = "Poor"
+    else:
+        rating = "Very Poor"
+    
+    # Final summary
+    print("\n" + "=" * 50)
+    print(f"Password Strength Summary for '{password}'")
+    print("=" * 50)
+    print(f"Strength Score: {strength_score:.1f}/10 ({rating})")
+    print(f"Length: {len(password)} characters")
+    print(f"Character Types Used: {get_character_types(password)}")
+    print(f"Attacks Successful: {successful_attacks}/{total_attacks}")
+    
+    for attack_name, attack_result in results.items():
+        status = "Cracked" if attack_result['success'] else "Resistant"
+        print(f"- {attack_name.replace('_', ' ').title()}: {status} " +
+              f"({attack_result['attempts']} attempts, {attack_result['time_taken']:.2f} seconds)")
+    
+    return results
+
+def get_character_types(password):
+    """Return the types of characters used in the password."""
+    types = []
+    
+    if any(c.islower() for c in password):
+        types.append("lowercase")
+    if any(c.isupper() for c in password):
+        types.append("uppercase")
+    if any(c.isdigit() for c in password):
+        types.append("digits")
+    if any(c in string.punctuation for c in password):
+        types.append("special characters")
+        
+    return types
+
+def generate_random_password(length=12, use_upper=True, use_lower=True, use_digits=True, use_special=True):
+    """Generate a random password with the specified characteristics."""
+    chars = ""
+    
+    if use_lower:
+        chars += string.ascii_lowercase
+    if use_upper:
+        chars += string.ascii_uppercase
+    if use_digits:
+        chars += string.digits
+    if use_special:
+        chars += string.punctuation
+        
+    if not chars:
+        chars = string.ascii_lowercase  # Default to lowercase if nothing selected
+        
+    return ''.join(random.choice(chars) for _ in range(length))
+
+# Example usage
+if __name__ == "__main__":
+    print("Password Strength Tester")
+    print("=" * 50)
+    print("This tool will simulate various attacks to test password strength.")
+    
+    # Test examples
+    test_password_strength("abc123")
+    test_password_strength("P@ssw0rd")
+    
+    # Test a randomly generated password
+    random_password = generate_random_password()
+    test_password_strength(random_password)
+    
+    # Let the user try their own passwords
+    print("\nWould you like to test your own password? (y/n)")
+    response = input("> ").strip().lower()
+    
+    if response == 'y':
+        print("\nEnter a password to test (don't use a real password you use elsewhere):")
+        user_password = input("> ")
+        
+        if user_password:
+            test_password_strength(user_password)
+    
+    print("\nRemember: This is a simulation for educational purposes only.")
+    print("In real situations, passwords should be protected with rate limiting, lockouts, and other security measures.")

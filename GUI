@@ -1,0 +1,647 @@
+import tkinter as tk
+from tkinter import ttk, scrolledtext, messagebox
+import string
+import time
+import random
+import itertools
+import threading
+import io
+import sys
+from datetime import datetime
+
+class RedirectText:
+    """Redirect stdout to a tkinter Text widget"""
+    def __init__(self, text_widget):
+        self.text_widget = text_widget
+        self.buffer = io.StringIO()
+        
+    def write(self, string):
+        self.buffer.write(string)
+        self.text_widget.configure(state="normal")
+        self.text_widget.insert(tk.END, string)
+        self.text_widget.see(tk.END)
+        self.text_widget.configure(state="disabled")
+        
+    def flush(self):
+        pass
+
+class DummyLoginSystem:
+    """A dummy login system that can be used to test password strength."""
+    
+    def __init__(self, real_password):
+        self.real_password = real_password
+        self.login_attempts = 0
+        
+    def attempt_login(self, password_guess):
+        """Simulate a login attempt with the given password."""
+        self.login_attempts += 1
+        return password_guess == self.real_password
+        
+    def get_attempts(self):
+        """Return the number of login attempts made."""
+        return self.login_attempts
+
+def brute_force_sequential(login_system, char_set, max_length):
+    """
+    Attempt a brute force attack using sequential combinations of characters.
+    
+    Args:
+        login_system: The login system to attack
+        char_set: The set of characters to use
+        max_length: The maximum password length to try
+        
+    Returns:
+        tuple: (success, password, attempts, time_taken)
+    """
+    start_time = time.time()
+    
+    # Try passwords of different lengths
+    for length in range(1, max_length + 1):
+        print(f"Trying passwords of length {length}...")
+        
+        # Generate all possible combinations of the given length
+        for combo in itertools.product(char_set, repeat=length):
+            password_guess = ''.join(combo)
+            
+            if login_system.attempt_login(password_guess):
+                end_time = time.time()
+                return True, password_guess, login_system.get_attempts(), end_time - start_time
+                
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
+
+def dictionary_attack(login_system, dictionary_file):
+    """
+    Attempt a dictionary attack using a list of common passwords.
+    
+    Args:
+        login_system: The login system to attack
+        dictionary_file: Path to a file containing common passwords
+        
+    Returns:
+        tuple: (success, password, attempts, time_taken)
+    """
+    start_time = time.time()
+    
+    try:
+        with open(dictionary_file, 'r') as f:
+            for line in f:
+                password_guess = line.strip()
+                
+                if login_system.attempt_login(password_guess):
+                    end_time = time.time()
+                    return True, password_guess, login_system.get_attempts(), end_time - start_time
+    except FileNotFoundError:
+        print(f"Dictionary file '{dictionary_file}' not found.")
+        
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
+
+def hybrid_attack(login_system, base_words, max_variations=100):
+    """
+    Attempt a hybrid attack combining dictionary words with common variations.
+    
+    Args:
+        login_system: The login system to attack
+        base_words: List of base words to try variations of
+        max_variations: Maximum number of variations to try per word
+        
+    Returns:
+        tuple: (success, password, attempts, time_taken)
+    """
+    start_time = time.time()
+    
+    # Common substitutions (leet speak)
+    substitutions = {
+        'a': ['a', 'A', '@', '4'],
+        'e': ['e', 'E', '3'],
+        'i': ['i', 'I', '1', '!'],
+        'o': ['o', 'O', '0'],
+        's': ['s', 'S', '$', '5'],
+        't': ['t', 'T', '7'],
+    }
+    
+    # Common additions
+    common_additions = ['', '123', '1234', '12345', '!', '123!', 'password', '2023', '2024']
+    
+    for base_word in base_words:
+        # Try the base word first
+        if login_system.attempt_login(base_word):
+            end_time = time.time()
+            return True, base_word, login_system.get_attempts(), end_time - start_time
+        
+        # Try with common additions
+        for addition in common_additions:
+            password_guess = base_word + addition
+            if login_system.attempt_login(password_guess):
+                end_time = time.time()
+                return True, password_guess, login_system.get_attempts(), end_time - start_time
+        
+        # Try some random variations with substitutions
+        variations_tried = 0
+        base_chars = list(base_word)
+        
+        while variations_tried < max_variations:
+            # Create a variation by randomly substituting characters
+            variation = base_word
+            for i, char in enumerate(base_chars):
+                if char.lower() in substitutions and random.random() < 0.3:
+                    substitution = random.choice(substitutions[char.lower()])
+                    variation = variation[:i] + substitution + variation[i+1:]
+            
+            # Add a common suffix
+            variation += random.choice(common_additions)
+            
+            if login_system.attempt_login(variation):
+                end_time = time.time()
+                return True, variation, login_system.get_attempts(), end_time - start_time
+            
+            variations_tried += 1
+    
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
+
+def test_password_strength(password, max_length=4, attack_types=None):
+    """
+    Test the strength of a password by attempting various attacks.
+    
+    Args:
+        password: The password to test
+        max_length: Maximum length for brute force attempts
+        attack_types: List of attack types to try (default: all)
+        
+    Returns:
+        dict: Results of the attacks
+    """
+    if attack_types is None:
+        attack_types = ['sequential', 'sequential_limited', 'dictionary', 'hybrid']
+    
+    results = {}
+    
+    print(f"\nTesting password strength for: '{password}'")
+    print("-" * 50)
+    
+    if 'sequential' in attack_types:
+        print("\nAttempting sequential brute force with full character set...")
+        login_system = DummyLoginSystem(password)
+        char_set = string.ascii_lowercase + string.ascii_uppercase + string.digits + string.punctuation
+        success, found_password, attempts, time_taken = brute_force_sequential(login_system, char_set, max_length)
+        
+        results['sequential'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"Password cracked: '{found_password}'")
+        else:
+            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+    
+    if 'sequential_limited' in attack_types:
+        print("\nAttempting sequential brute force with limited character set...")
+        login_system = DummyLoginSystem(password)
+        char_set = string.ascii_lowercase + string.digits
+        success, found_password, attempts, time_taken = brute_force_sequential(login_system, char_set, max_length)
+        
+        results['sequential_limited'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"Password cracked: '{found_password}'")
+        else:
+            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+    
+    if 'dictionary' in attack_types:
+        print("\nSimulating dictionary attack...")
+        login_system = DummyLoginSystem(password)
+        
+        # Create a mini dictionary for demonstration purposes
+        with open('temp_dictionary.txt', 'w') as f:
+            common_passwords = [
+                'password', '123456', 'qwerty', 'admin', 'welcome',
+                'login', 'abc123', 'letmein', 'master', 'hello',
+                'monkey', 'password123', 'test', 'football', 'baseball'
+            ]
+            f.write('\n'.join(common_passwords))
+        
+        success, found_password, attempts, time_taken = dictionary_attack(login_system, 'temp_dictionary.txt')
+        
+        results['dictionary'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"Password cracked: '{found_password}'")
+        else:
+            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+    
+    if 'hybrid' in attack_types:
+        print("\nAttempting hybrid attack...")
+        login_system = DummyLoginSystem(password)
+        base_words = ['admin', 'user', 'login', 'password', 'welcome', 'secure']
+        success, found_password, attempts, time_taken = hybrid_attack(login_system, base_words)
+        
+        results['hybrid'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"Password cracked: '{found_password}'")
+        else:
+            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+    
+    # Calculate overall strength score
+    successful_attacks = sum(1 for attack_result in results.values() if attack_result['success'])
+    total_attacks = len(results)
+    
+    if total_attacks > 0:
+        strength_score = (total_attacks - successful_attacks) / total_attacks * 10
+    else:
+        strength_score = 0
+        
+    # Qualitative rating
+    if strength_score >= 9:
+        rating = "Excellent"
+    elif strength_score >= 7:
+        rating = "Good"
+    elif strength_score >= 5:
+        rating = "Fair"
+    elif strength_score >= 3:
+        rating = "Poor"
+    else:
+        rating = "Very Poor"
+    
+    # Final summary
+    print("\n" + "=" * 50)
+    print(f"Password Strength Summary for '{password}'")
+    print("=" * 50)
+    print(f"Strength Score: {strength_score:.1f}/10 ({rating})")
+    print(f"Length: {len(password)} characters")
+    print(f"Character Types Used: {get_character_types(password)}")
+    print(f"Attacks Successful: {successful_attacks}/{total_attacks}")
+    
+    for attack_name, attack_result in results.items():
+        status = "Cracked" if attack_result['success'] else "Resistant"
+        print(f"- {attack_name.replace('_', ' ').title()}: {status} " +
+              f"({attack_result['attempts']} attempts, {attack_result['time_taken']:.2f} seconds)")
+    
+    return results, strength_score, rating
+
+def get_character_types(password):
+    """Return the types of characters used in the password."""
+    types = []
+    
+    if any(c.islower() for c in password):
+        types.append("lowercase")
+    if any(c.isupper() for c in password):
+        types.append("uppercase")
+    if any(c.isdigit() for c in password):
+        types.append("digits")
+    if any(c in string.punctuation for c in password):
+        types.append("special characters")
+        
+    return types
+
+def generate_random_password(length=12, use_upper=True, use_lower=True, use_digits=True, use_special=True):
+    """Generate a random password with the specified characteristics."""
+    chars = ""
+    
+    if use_lower:
+        chars += string.ascii_lowercase
+    if use_upper:
+        chars += string.ascii_uppercase
+    if use_digits:
+        chars += string.digits
+    if use_special:
+        chars += string.punctuation
+        
+    if not chars:
+        chars = string.ascii_lowercase  # Default to lowercase if nothing selected
+        
+    return ''.join(random.choice(chars) for _ in range(length))
+
+class PasswordTesterGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Password Strength Tester")
+        self.root.geometry("800x600")
+        self.root.resizable(True, True)
+        
+        # Set the theme
+        self.style = ttk.Style()
+        try:
+            self.style.theme_use("clam")
+        except:
+            pass  # If theme is not available, use default
+        
+        # Create main frames
+        self.create_frames()
+        
+        # Create widgets
+        self.create_input_widgets()
+        self.create_attack_options()
+        self.create_password_generator()
+        self.create_output_area()
+        
+        # Initialize variables
+        self.running = False
+        self.thread = None
+        
+    def create_frames(self):
+        # Main frames
+        self.input_frame = ttk.LabelFrame(self.root, text="Password Testing")
+        self.input_frame.pack(fill="x", expand=False, padx=10, pady=5)
+        
+        self.generator_frame = ttk.LabelFrame(self.root, text="Password Generator")
+        self.generator_frame.pack(fill="x", expand=False, padx=10, pady=5)
+        
+        self.output_frame = ttk.LabelFrame(self.root, text="Results")
+        self.output_frame.pack(fill="both", expand=True, padx=10, pady=5)
+    
+    def create_input_widgets(self):
+        # Password testing section
+        input_container = ttk.Frame(self.input_frame)
+        input_container.pack(fill="x", expand=True, padx=5, pady=5)
+        
+        ttk.Label(input_container, text="Password to Test:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        
+        self.password_var = tk.StringVar()
+        self.password_entry = ttk.Entry(input_container, textvariable=self.password_var, show="*")
+        self.password_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        
+        self.show_password_var = tk.BooleanVar(value=False)
+        self.show_password_check = ttk.Checkbutton(
+            input_container, 
+            text="Show Password",
+            variable=self.show_password_var,
+            command=self.toggle_password_visibility
+        )
+        self.show_password_check.grid(row=0, column=2, padx=5, pady=5)
+        
+        self.max_length_var = tk.IntVar(value=4)
+        ttk.Label(input_container, text="Max Brute Force Length:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        length_spinner = ttk.Spinbox(
+            input_container, 
+            from_=1, 
+            to=6, 
+            textvariable=self.max_length_var,
+            width=5
+        )
+        length_spinner.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        
+        ttk.Label(input_container, text="(Warning: Values above 4 may take a long time)").grid(
+            row=1, column=2, padx=5, pady=5, sticky="w"
+        )
+        
+        # Test button
+        self.test_button = ttk.Button(input_container, text="Test Password", command=self.run_test)
+        self.test_button.grid(row=2, column=0, columnspan=3, padx=5, pady=10)
+        
+        # Configure grid
+        input_container.columnconfigure(1, weight=1)
+        
+    def create_attack_options(self):
+        # Attack options
+        attack_frame = ttk.LabelFrame(self.input_frame, text="Attack Types")
+        attack_frame.pack(fill="x", expand=True, padx=5, pady=5)
+        
+        self.attack_vars = {}
+        attacks = [
+            ("Sequential (Full Character Set)", "sequential"),
+            ("Sequential (Limited Character Set)", "sequential_limited"),
+            ("Dictionary Attack", "dictionary"),
+            ("Hybrid Attack", "hybrid")
+        ]
+        
+        for i, (attack_name, attack_key) in enumerate(attacks):
+            self.attack_vars[attack_key] = tk.BooleanVar(value=True)
+            cb = ttk.Checkbutton(
+                attack_frame, 
+                text=attack_name,
+                variable=self.attack_vars[attack_key]
+            )
+            cb.grid(row=i//2, column=i%2, padx=10, pady=5, sticky="w")
+            
+        # Configure grid
+        attack_frame.columnconfigure(0, weight=1)
+        attack_frame.columnconfigure(1, weight=1)
+    
+    def create_password_generator(self):
+        # Password generator section
+        gen_container = ttk.Frame(self.generator_frame)
+        gen_container.pack(fill="x", expand=True, padx=5, pady=5)
+        
+        # Password length
+        ttk.Label(gen_container, text="Length:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.gen_length_var = tk.IntVar(value=12)
+        length_spinner = ttk.Spinbox(
+            gen_container, 
+            from_=4, 
+            to=32, 
+            textvariable=self.gen_length_var,
+            width=5
+        )
+        length_spinner.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        
+        # Character options
+        options_frame = ttk.Frame(gen_container)
+        options_frame.grid(row=1, column=0, columnspan=4, padx=5, pady=5, sticky="w")
+        
+        self.use_lower_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Lowercase", variable=self.use_lower_var).pack(side="left", padx=5)
+        
+        self.use_upper_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Uppercase", variable=self.use_upper_var).pack(side="left", padx=5)
+        
+        self.use_digits_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Digits", variable=self.use_digits_var).pack(side="left", padx=5)
+        
+        self.use_special_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Special Chars", variable=self.use_special_var).pack(side="left", padx=5)
+        
+        # Generate button and result
+        generate_btn = ttk.Button(gen_container, text="Generate Password", command=self.generate_password)
+        generate_btn.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+        
+        ttk.Label(gen_container, text="Generated Password:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        
+        self.generated_var = tk.StringVar()
+        generated_entry = ttk.Entry(gen_container, textvariable=self.generated_var, width=30)
+        generated_entry.grid(row=3, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
+        
+        copy_btn = ttk.Button(gen_container, text="Copy", command=self.copy_password)
+        copy_btn.grid(row=3, column=3, padx=5, pady=5, sticky="w")
+        
+        use_btn = ttk.Button(gen_container, text="Use This Password", command=self.use_generated_password)
+        use_btn.grid(row=4, column=0, columnspan=4, padx=5, pady=5, sticky="w")
+        
+        # Configure grid
+        gen_container.columnconfigure(1, weight=1)
+    
+    def create_output_area(self):
+        # Results output area
+        self.output_text = scrolledtext.ScrolledText(self.output_frame, wrap=tk.WORD)
+        self.output_text.pack(fill="both", expand=True, padx=5, pady=5)
+        self.output_text.configure(state="disabled")
+        
+        # Create a status bar for strength indicator
+        self.status_frame = ttk.Frame(self.root)
+        self.status_frame.pack(fill="x", expand=False, padx=10, pady=5)
+        
+        self.strength_var = tk.StringVar(value="No password tested yet")
+        self.strength_label = ttk.Label(self.status_frame, textvariable=self.strength_var, font=("", 10, "bold"))
+        self.strength_label.pack(side="left", padx=5)
+        
+        self.progress_var = tk.DoubleVar(value=0)
+        self.progress = ttk.Progressbar(
+            self.status_frame, 
+            orient="horizontal", 
+            length=200, 
+            mode="determinate",
+            variable=self.progress_var
+        )
+        self.progress.pack(side="right", padx=5)
+        
+        # Redirect stdout to the text widget
+        self.redirect = RedirectText(self.output_text)
+        sys.stdout = self.redirect
+    
+    def toggle_password_visibility(self):
+        """Toggle password visibility in the entry field."""
+        if self.show_password_var.get():
+            self.password_entry.config(show="")
+        else:
+            self.password_entry.config(show="*")
+    
+    def generate_password(self):
+        """Generate a random password based on the selected options."""
+        try:
+            length = self.gen_length_var.get()
+            password = generate_random_password(
+                length=length,
+                use_upper=self.use_upper_var.get(),
+                use_lower=self.use_lower_var.get(),
+                use_digits=self.use_digits_var.get(),
+                use_special=self.use_special_var.get()
+            )
+            self.generated_var.set(password)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate password: {str(e)}")
+    
+    def copy_password(self):
+        """Copy the generated password to clipboard."""
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.generated_var.get())
+        messagebox.showinfo("Success", "Password copied to clipboard!")
+    
+    def use_generated_password(self):
+        """Use the generated password for testing."""
+        password = self.generated_var.get()
+        if password:
+            self.password_var.set(password)
+            messagebox.showinfo("Success", "Generated password set for testing!")
+        else:
+            messagebox.showwarning("Warning", "No password generated yet!")
+    
+    def run_test(self):
+        """Run the password strength test in a separate thread."""
+        if self.running:
+            messagebox.showwarning("Warning", "A test is already running!")
+            return
+        
+        password = self.password_var.get()
+        if not password:
+            messagebox.showwarning("Warning", "Please enter a password to test!")
+            return
+        
+        # Get selected attack types
+        attack_types = [k for k, v in self.attack_vars.items() if v.get()]
+        if not attack_types:
+            messagebox.showwarning("Warning", "Please select at least one attack type!")
+            return
+        
+        max_length = self.max_length_var.get()
+        
+        # Clear output area
+        self.output_text.configure(state="normal")
+        self.output_text.delete(1.0, tk.END)
+        self.output_text.configure(state="disabled")
+        
+        # Reset and start progress
+        self.progress_var.set(0)
+        self.strength_var.set("Testing in progress...")
+        
+        # Disable the test button
+        self.test_button.configure(state="disabled")
+        self.running = True
+        
+        # Start test in a separate thread
+        self.thread = threading.Thread(
+            target=self.perform_test_thread,
+            args=(password, max_length, attack_types)
+        )
+        self.thread.daemon = True
+        self.thread.start()
+    
+    def perform_test_thread(self, password, max_length, attack_types):
+        """Perform the password strength test in a separate thread."""
+        try:
+            results, strength_score, rating = test_password_strength(password, max_length, attack_types)
+            
+            # Update GUI from main thread
+            self.root.after(0, self.update_results, strength_score, rating)
+        except Exception as e:
+            self.root.after(0, self.show_error, str(e))
+        finally:
+            # Re-enable the test button
+            self.root.after(0, self.reset_ui)
+    
+    def update_results(self, strength_score, rating):
+        """Update the GUI with test results."""
+        # Update progress bar
+        self.progress_var.set(strength_score * 10)
+        
+        # Update strength label
+        color = self.get_color_for_rating(rating)
+        self.strength_var.set(f"Password Strength: {strength_score:.1f}/10 ({rating})")
+        self.strength_label.configure(foreground=color)
+    
+    def get_color_for_rating(self, rating):
+        """Get a color based on the password strength rating."""
+        colors = {
+            "Excellent": "#006400",  # Dark Green
+            "Good": "#008000",       # Green
+            "Fair": "#FFA500",       # Orange
+            "Poor": "#FF4500",       # OrangeRed
+            "Very Poor": "#FF0000"   # Red
+        }
+        return colors.get(rating, "black")
+    
+    def show_error(self, error_message):
+        """Show an error message."""
+        messagebox.showerror("Error", f"An error occurred: {error_message}")
+    
+    def reset_ui(self):
+        """Reset the UI state after a test completes."""
+        self.test_button.configure(state="normal")
+        self.running = False
+
+def main():
+    root = tk.Tk()
+    app = PasswordTesterGUI(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()

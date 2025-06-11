@@ -2,35 +2,445 @@ import string
 import time
 import random
 import itertools
+import hashlib
 from datetime import datetime
+from enum import Enum
+
+class AccountStatus(Enum):
+    ACTIVE = "active"
+    LOCKED = "locked"
+    RATE_LIMITED = "rate_limited"
 
 class DummyLoginSystem:
-    """A dummy login system that can be used to test password strength."""
+    """A dummy login system that can be used to test password strength with security features."""
     
-    def __init__(self, real_password):
+    def __init__(self, real_password, rate_limiting=True, lockout_threshold=5, 
+                 base_delay=1.0, max_delay=60.0, lockout_duration=300):
         self.real_password = real_password
         self.login_attempts = 0
+        self.failed_attempts = 0
+        self.consecutive_failures = 0
+        self.last_attempt_time = 0
+        self.account_status = AccountStatus.ACTIVE
+        self.lockout_start_time = 0
+        
+        # Rate limiting settings
+        self.rate_limiting = rate_limiting
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        
+        # Account lockout settings
+        self.lockout_threshold = lockout_threshold
+        self.lockout_duration = lockout_duration
         
     def attempt_login(self, password_guess):
         """Simulate a login attempt with the given password."""
+        current_time = time.time()
+        
+        # Check if account is locked
+        if self.account_status == AccountStatus.LOCKED:
+            if current_time - self.lockout_start_time < self.lockout_duration:
+                return False, "Account locked"
+            else:
+                # Unlock account after lockout duration
+                self.account_status = AccountStatus.ACTIVE
+                self.consecutive_failures = 0
+        
+        # Apply rate limiting delay
+        if self.rate_limiting and self.last_attempt_time > 0:
+            # Calculate progressive delay based on consecutive failures
+            delay = min(self.base_delay * (2 ** self.consecutive_failures), self.max_delay)
+            elapsed = current_time - self.last_attempt_time
+            
+            if elapsed < delay:
+                sleep_time = delay - elapsed
+                time.sleep(sleep_time)
+        
         self.login_attempts += 1
-        return password_guess == self.real_password
+        self.last_attempt_time = time.time()
+        
+        # Check password
+        success = password_guess == self.real_password
+        
+        if success:
+            self.consecutive_failures = 0
+            self.account_status = AccountStatus.ACTIVE
+            return True, "Login successful"
+        else:
+            self.failed_attempts += 1
+            self.consecutive_failures += 1
+            
+            # Check for account lockout
+            if self.consecutive_failures >= self.lockout_threshold:
+                self.account_status = AccountStatus.LOCKED
+                self.lockout_start_time = time.time()
+                return False, "Account locked due to too many failed attempts"
+            
+            return False, "Invalid password"
         
     def get_attempts(self):
         """Return the number of login attempts made."""
         return self.login_attempts
+    
+    def get_status(self):
+        """Return current account status."""
+        return self.account_status
+    
+    def reset_lockout(self):
+        """Reset account lockout (admin function)."""
+        self.account_status = AccountStatus.ACTIVE
+        self.consecutive_failures = 0
+        self.lockout_start_time = 0
+
+class RainbowTable:
+    """Simulates a rainbow table with pre-computed hashes."""
+    
+    def __init__(self):
+        self.hash_table = {}
+        self._generate_common_hashes()
+    
+    def _generate_common_hashes(self):
+        """Generate hashes for common passwords."""
+        common_passwords = [
+            'password', '123456', 'qwerty', 'admin', 'welcome', 'login',
+            'abc123', 'letmein', 'master', 'hello', 'monkey', 'password123',
+            'test', 'football', 'baseball', '1234', '12345', '123456789',
+            'password1', 'iloveyou', 'princess', 'rockyou', 'abc123',
+            'nicole', 'daniel', 'babygirl', 'monkey', 'lovely', 'jessica'
+        ]
+        
+        # Add variations
+        variations = []
+        for pwd in common_passwords:
+            variations.extend([
+                pwd.upper(),
+                pwd.capitalize(),
+                pwd + '!',
+                pwd + '123',
+                pwd + '1',
+                pwd + '2023',
+                pwd + '2024',
+                pwd + '2025'
+            ])
+        
+        all_passwords = common_passwords + variations
+        
+        for pwd in all_passwords:
+            # Store MD5 hash (just for simulation)
+            hash_value = hashlib.md5(pwd.encode()).hexdigest()
+            self.hash_table[hash_value] = pwd
+    
+    def lookup(self, password_hash):
+        """Look up a password hash in the rainbow table."""
+        return self.hash_table.get(password_hash)
+    
+    def crack_password(self, password):
+        """Attempt to crack a password using the rainbow table."""
+        password_hash = hashlib.md5(password.encode()).hexdigest()
+        return self.lookup(password_hash)
+
+class SocialEngineeringWordlist:
+    """Generate wordlists based on social engineering patterns."""
+    
+    @staticmethod
+    def generate_personal_patterns(first_name="", last_name="", birth_year="", 
+                                 company="", pet_name="", city=""):
+        """Generate passwords based on personal information."""
+        patterns = []
+        
+        # Basic personal info
+        if first_name:
+            patterns.extend([
+                first_name,
+                first_name.capitalize(),
+                first_name.lower(),
+                first_name.upper()
+            ])
+        
+        if last_name:
+            patterns.extend([
+                last_name,
+                last_name.capitalize(),
+                last_name.lower(),
+                last_name.upper()
+            ])
+        
+        # Name combinations
+        if first_name and last_name:
+            patterns.extend([
+                first_name + last_name,
+                first_name.capitalize() + last_name.capitalize(),
+                first_name[0].lower() + last_name.lower(),
+                last_name.lower() + first_name[0].lower()
+            ])
+        
+        # Add common suffixes to base patterns
+        base_patterns = patterns.copy()
+        common_suffixes = ['123', '1', '!', '2023', '2024', '2025', '01', '00']
+        
+        for base in base_patterns:
+            for suffix in common_suffixes:
+                patterns.append(base + suffix)
+        
+        # Birth year patterns
+        if birth_year:
+            for base in base_patterns:
+                patterns.extend([
+                    base + birth_year,
+                    base + birth_year[-2:],  # Last 2 digits
+                    birth_year + base
+                ])
+        
+        # Company patterns
+        if company:
+            company_patterns = [company, company.lower(), company.capitalize()]
+            patterns.extend(company_patterns)
+            for comp in company_patterns:
+                for suffix in common_suffixes:
+                    patterns.append(comp + suffix)
+        
+        # Pet/city patterns
+        for personal_info in [pet_name, city]:
+            if personal_info:
+                info_patterns = [personal_info, personal_info.lower(), personal_info.capitalize()]
+                patterns.extend(info_patterns)
+                for info in info_patterns:
+                    for suffix in common_suffixes:
+                        patterns.append(info + suffix)
+        
+        return list(set(patterns))  # Remove duplicates
+
+class MaskAttack:
+    """Implement mask-based attacks for specific password patterns."""
+    
+    @staticmethod
+    def generate_mask_patterns():
+        """Generate common password masks."""
+        masks = [
+            "?l?l?l?l?d?d",          # 4 letters + 2 digits
+            "?l?l?l?l?d?d?d",        # 4 letters + 3 digits
+            "?u?l?l?l?l?d?d",        # Capital + 4 letters + 2 digits
+            "?l?l?l?l?l?d?d",        # 5 letters + 2 digits
+            "?l?l?l?l?l?l?d?d",      # 6 letters + 2 digits
+            "?u?l?l?l?l?l?l?d?d",    # Capital + 6 letters + 2 digits
+            "?l?l?l?l?s",            # 4 letters + special char
+            "?u?l?l?l?l?l?l?s",      # Capital + 6 letters + special
+            "?d?d?d?d?d?d",          # 6 digits
+            "?l?l?l?l?l?l?l?l",      # 8 letters
+        ]
+        return masks
+    
+    @staticmethod
+    def expand_mask(mask, max_combinations=1000):
+        """Expand a mask pattern into actual password candidates."""
+        # Character sets for mask patterns
+        char_sets = {
+            '?l': string.ascii_lowercase,
+            '?u': string.ascii_uppercase,
+            '?d': string.digits,
+            '?s': '!@#$%^&*'
+        }
+        
+        # Parse mask into components
+        components = []
+        i = 0
+        while i < len(mask):
+            if i < len(mask) - 1 and mask[i:i+2] in char_sets:
+                components.append(char_sets[mask[i:i+2]])
+                i += 2
+            else:
+                components.append([mask[i]])
+                i += 1
+        
+        # Generate combinations (limited to prevent memory issues)
+        passwords = []
+        count = 0
+        
+        for combo in itertools.product(*components):
+            if count >= max_combinations:
+                break
+            passwords.append(''.join(combo))
+            count += 1
+        
+        return passwords
+
+class RuleBasedAttack:
+    """Apply transformation rules to dictionary words."""
+    
+    @staticmethod
+    def apply_rules(word_list, max_variations_per_word=20):
+        """Apply various transformation rules to words."""
+        transformed_words = set()
+        
+        rules = [
+            # Capitalization rules
+            lambda w: w.capitalize(),
+            lambda w: w.upper(),
+            lambda w: w.lower(),
+            lambda w: w.swapcase(),
+            
+            # Leetspeak substitutions
+            lambda w: w.replace('a', '@').replace('e', '3').replace('i', '1').replace('o', '0').replace('s', '$'),
+            lambda w: w.replace('a', '4').replace('e', '3').replace('i', '!').replace('o', '0').replace('s', '5'),
+            
+            # Append common patterns
+            lambda w: w + '123',
+            lambda w: w + '1',
+            lambda w: w + '!',
+            lambda w: w + '2023',
+            lambda w: w + '2024',
+            lambda w: w + '2025',
+            lambda w: w + '01',
+            lambda w: '1' + w,
+            lambda w: '!' + w,
+            
+            # Reverse
+            lambda w: w[::-1],
+            
+            # Double
+            lambda w: w + w,
+            
+            # Remove vowels
+            lambda w: ''.join([c for c in w if c.lower() not in 'aeiou']),
+            
+            # First and last character manipulation
+            lambda w: w[0].upper() + w[1:] if len(w) > 1 else w.upper(),
+            lambda w: w[:-1] + w[-1].upper() if len(w) > 1 else w.upper(),
+        ]
+        
+        for word in word_list:
+            variations_count = 0
+            for rule in rules:
+                if variations_count >= max_variations_per_word:
+                    break
+                try:
+                    transformed = rule(word)
+                    if transformed and transformed != word:
+                        transformed_words.add(transformed)
+                        variations_count += 1
+                except:
+                    continue  # Skip if rule fails
+        
+        return list(transformed_words)
+
+def rainbow_table_attack(login_system, password):
+    """Attempt a rainbow table attack."""
+    print("Attempting rainbow table attack...")
+    start_time = time.time()
+    
+    rainbow_table = RainbowTable()
+    
+    # Try to crack the password
+    cracked = rainbow_table.crack_password(password)
+    
+    if cracked:
+        # Simulate the login attempt
+        success, message = login_system.attempt_login(cracked)
+        end_time = time.time()
+        return success, cracked, 1, end_time - start_time
+    else:
+        end_time = time.time()
+        return False, None, 1, end_time - start_time
+
+def social_engineering_attack(login_system, personal_info=None):
+    """Attempt attack using social engineering wordlists."""
+    print("Attempting social engineering attack...")
+    start_time = time.time()
+    
+    if personal_info is None:
+        # Use default common personal info patterns
+        personal_info = {
+            'first_name': 'john',
+            'last_name': 'smith',
+            'birth_year': '1990',
+            'company': 'acme',
+            'pet_name': 'buddy',
+            'city': 'boston'
+        }
+    
+    wordlist = SocialEngineeringWordlist.generate_personal_patterns(**personal_info)
+    
+    for password_guess in wordlist:
+        success, message = login_system.attempt_login(password_guess)
+        
+        if success:
+            end_time = time.time()
+            return True, password_guess, login_system.get_attempts(), end_time - start_time
+        
+        # Check if account is locked
+        if login_system.get_status() == AccountStatus.LOCKED:
+            print("Account locked during social engineering attack")
+            break
+    
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
+
+def mask_attack(login_system, target_masks=None):
+    """Attempt mask-based attack."""
+    print("Attempting mask attack...")
+    start_time = time.time()
+    
+    if target_masks is None:
+        target_masks = MaskAttack.generate_mask_patterns()
+    
+    for mask in target_masks:
+        print(f"  Trying mask: {mask}")
+        passwords = MaskAttack.expand_mask(mask, max_combinations=500)
+        
+        for password_guess in passwords:
+            success, message = login_system.attempt_login(password_guess)
+            
+            if success:
+                end_time = time.time()
+                return True, password_guess, login_system.get_attempts(), end_time - start_time
+            
+            # Check if account is locked
+            if login_system.get_status() == AccountStatus.LOCKED:
+                print("Account locked during mask attack")
+                break
+        
+        if login_system.get_status() == AccountStatus.LOCKED:
+            break
+    
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
+
+def rule_based_attack(login_system, base_dictionary=None):
+    """Attempt rule-based attack on dictionary words."""
+    print("Attempting rule-based attack...")
+    start_time = time.time()
+    
+    if base_dictionary is None:
+        base_dictionary = [
+            'password', 'admin', 'user', 'login', 'welcome', 'secure',
+            'system', 'test', 'guest', 'root', 'master', 'service'
+        ]
+    
+    # Apply transformation rules
+    transformed_words = RuleBasedAttack.apply_rules(base_dictionary)
+    
+    # Try base words first
+    all_words = base_dictionary + transformed_words
+    
+    for password_guess in all_words:
+        success, message = login_system.attempt_login(password_guess)
+        
+        if success:
+            end_time = time.time()
+            return True, password_guess, login_system.get_attempts(), end_time - start_time
+        
+        # Check if account is locked
+        if login_system.get_status() == AccountStatus.LOCKED:
+            print("Account locked during rule-based attack")
+            break
+    
+    end_time = time.time()
+    return False, None, login_system.get_attempts(), end_time - start_time
 
 def brute_force_sequential(login_system, char_set, max_length):
     """
     Attempt a brute force attack using sequential combinations of characters.
-    
-    Args:
-        login_system: The login system to attack
-        char_set: The set of characters to use
-        max_length: The maximum password length to try
-        
-    Returns:
-        tuple: (success, password, attempts, time_taken)
+    Enhanced with rate limiting awareness.
     """
     start_time = time.time()
     
@@ -42,9 +452,17 @@ def brute_force_sequential(login_system, char_set, max_length):
         for combo in itertools.product(char_set, repeat=length):
             password_guess = ''.join(combo)
             
-            if login_system.attempt_login(password_guess):
+            success, message = login_system.attempt_login(password_guess)
+            
+            if success:
                 end_time = time.time()
                 return True, password_guess, login_system.get_attempts(), end_time - start_time
+            
+            # Check if account is locked
+            if login_system.get_status() == AccountStatus.LOCKED:
+                print("Account locked during brute force attack")
+                end_time = time.time()
+                return False, None, login_system.get_attempts(), end_time - start_time
                 
     end_time = time.time()
     return False, None, login_system.get_attempts(), end_time - start_time
@@ -52,13 +470,7 @@ def brute_force_sequential(login_system, char_set, max_length):
 def dictionary_attack(login_system, dictionary_file):
     """
     Attempt a dictionary attack using a list of common passwords.
-    
-    Args:
-        login_system: The login system to attack
-        dictionary_file: Path to a file containing common passwords
-        
-    Returns:
-        tuple: (success, password, attempts, time_taken)
+    Enhanced with rate limiting awareness.
     """
     start_time = time.time()
     
@@ -67,106 +479,46 @@ def dictionary_attack(login_system, dictionary_file):
             for line in f:
                 password_guess = line.strip()
                 
-                if login_system.attempt_login(password_guess):
+                success, message = login_system.attempt_login(password_guess)
+                
+                if success:
                     end_time = time.time()
                     return True, password_guess, login_system.get_attempts(), end_time - start_time
+                
+                # Check if account is locked
+                if login_system.get_status() == AccountStatus.LOCKED:
+                    print("Account locked during dictionary attack")
+                    break
+                    
     except FileNotFoundError:
         print(f"Dictionary file '{dictionary_file}' not found.")
         
     end_time = time.time()
     return False, None, login_system.get_attempts(), end_time - start_time
 
-def hybrid_attack(login_system, base_words, max_variations=100):
-    """
-    Attempt a hybrid attack combining dictionary words with common variations.
-    
-    Args:
-        login_system: The login system to attack
-        base_words: List of base words to try variations of
-        max_variations: Maximum number of variations to try per word
-        
-    Returns:
-        tuple: (success, password, attempts, time_taken)
-    """
-    start_time = time.time()
-    
-    # Common substitutions (leet speak)
-    substitutions = {
-        'a': ['a', 'A', '@', '4'],
-        'e': ['e', 'E', '3'],
-        'i': ['i', 'I', '1', '!'],
-        'o': ['o', 'O', '0'],
-        's': ['s', 'S', '$', '5'],
-        't': ['t', 'T', '7'],
-    }
-    
-    # Common additions
-    common_additions = ['', '123', '1234', '12345', '!', '123!', 'password', '2023', '2024']
-    
-    for base_word in base_words:
-        # Try the base word first
-        if login_system.attempt_login(base_word):
-            end_time = time.time()
-            return True, base_word, login_system.get_attempts(), end_time - start_time
-        
-        # Try with common additions
-        for addition in common_additions:
-            password_guess = base_word + addition
-            if login_system.attempt_login(password_guess):
-                end_time = time.time()
-                return True, password_guess, login_system.get_attempts(), end_time - start_time
-        
-        # Try some random variations with substitutions
-        variations_tried = 0
-        base_chars = list(base_word)
-        
-        while variations_tried < max_variations:
-            # Create a variation by randomly substituting characters
-            variation = base_word
-            for i, char in enumerate(base_chars):
-                if char.lower() in substitutions and random.random() < 0.3:
-                    substitution = random.choice(substitutions[char.lower()])
-                    variation = variation[:i] + substitution + variation[i+1:]
-            
-            # Add a common suffix
-            variation += random.choice(common_additions)
-            
-            if login_system.attempt_login(variation):
-                end_time = time.time()
-                return True, variation, login_system.get_attempts(), end_time - start_time
-            
-            variations_tried += 1
-    
-    end_time = time.time()
-    return False, None, login_system.get_attempts(), end_time - start_time
-
-def test_password_strength(password, max_length=4, attack_types=None):
+def test_password_strength(password, max_length=4, attack_types=None, 
+                         rate_limiting=True, lockout_threshold=5, personal_info=None):
     """
     Test the strength of a password by attempting various attacks.
-    
-    Args:
-        password: The password to test
-        max_length: Maximum length for brute force attempts
-        attack_types: List of attack types to try (default: all)
-        
-    Returns:
-        dict: Results of the attacks
+    Enhanced with security features.
     """
     if attack_types is None:
-        attack_types = ['sequential', 'sequential_limited', 'dictionary', 'hybrid']
+        attack_types = ['rainbow_table', 'social_engineering', 'mask_attack', 
+                       'rule_based', 'dictionary', 'sequential_limited']
     
     results = {}
     
     print(f"\nTesting password strength for: '{password}'")
-    print("-" * 50)
+    print(f"Rate limiting: {'Enabled' if rate_limiting else 'Disabled'}")
+    print(f"Account lockout threshold: {lockout_threshold} attempts")
+    print("-" * 60)
     
-    if 'sequential' in attack_types:
-        print("\nAttempting sequential brute force with full character set...")
-        login_system = DummyLoginSystem(password)
-        char_set = string.ascii_lowercase + string.ascii_uppercase + string.digits + string.punctuation
-        success, found_password, attempts, time_taken = brute_force_sequential(login_system, char_set, max_length)
+    # Rainbow table attack
+    if 'rainbow_table' in attack_types:
+        login_system = DummyLoginSystem(password, rate_limiting, lockout_threshold)
+        success, found_password, attempts, time_taken = rainbow_table_attack(login_system, password)
         
-        results['sequential'] = {
+        results['rainbow_table'] = {
             'success': success,
             'found_password': found_password,
             'attempts': attempts,
@@ -174,17 +526,16 @@ def test_password_strength(password, max_length=4, attack_types=None):
         }
         
         if success:
-            print(f"Password cracked: '{found_password}'")
+            print(f"✗ Rainbow table attack: Password cracked: '{found_password}' ({attempts} attempts, {time_taken:.2f}s)")
         else:
-            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+            print(f"✓ Rainbow table attack: Resistant ({attempts} attempts, {time_taken:.2f}s)")
     
-    if 'sequential_limited' in attack_types:
-        print("\nAttempting sequential brute force with limited character set...")
-        login_system = DummyLoginSystem(password)
-        char_set = string.ascii_lowercase + string.digits
-        success, found_password, attempts, time_taken = brute_force_sequential(login_system, char_set, max_length)
+    # Social engineering attack
+    if 'social_engineering' in attack_types:
+        login_system = DummyLoginSystem(password, rate_limiting, lockout_threshold)
+        success, found_password, attempts, time_taken = social_engineering_attack(login_system, personal_info)
         
-        results['sequential_limited'] = {
+        results['social_engineering'] = {
             'success': success,
             'found_password': found_password,
             'attempts': attempts,
@@ -192,13 +543,47 @@ def test_password_strength(password, max_length=4, attack_types=None):
         }
         
         if success:
-            print(f"Password cracked: '{found_password}'")
+            print(f"✗ Social engineering attack: Password cracked: '{found_password}' ({attempts} attempts, {time_taken:.2f}s)")
         else:
-            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+            print(f"✓ Social engineering attack: Resistant ({attempts} attempts, {time_taken:.2f}s)")
     
+    # Mask attack
+    if 'mask_attack' in attack_types:
+        login_system = DummyLoginSystem(password, rate_limiting, lockout_threshold)
+        success, found_password, attempts, time_taken = mask_attack(login_system)
+        
+        results['mask_attack'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"✗ Mask attack: Password cracked: '{found_password}' ({attempts} attempts, {time_taken:.2f}s)")
+        else:
+            print(f"✓ Mask attack: Resistant ({attempts} attempts, {time_taken:.2f}s)")
+    
+    # Rule-based attack
+    if 'rule_based' in attack_types:
+        login_system = DummyLoginSystem(password, rate_limiting, lockout_threshold)
+        success, found_password, attempts, time_taken = rule_based_attack(login_system)
+        
+        results['rule_based'] = {
+            'success': success,
+            'found_password': found_password,
+            'attempts': attempts,
+            'time_taken': time_taken
+        }
+        
+        if success:
+            print(f"✗ Rule-based attack: Password cracked: '{found_password}' ({attempts} attempts, {time_taken:.2f}s)")
+        else:
+            print(f"✓ Rule-based attack: Resistant ({attempts} attempts, {time_taken:.2f}s)")
+    
+    # Dictionary attack
     if 'dictionary' in attack_types:
-        print("\nSimulating dictionary attack...")
-        login_system = DummyLoginSystem(password)
+        login_system = DummyLoginSystem(password, rate_limiting, lockout_threshold)
         
         # Create a mini dictionary for demonstration purposes
         with open('temp_dictionary.txt', 'w') as f:
@@ -219,17 +604,17 @@ def test_password_strength(password, max_length=4, attack_types=None):
         }
         
         if success:
-            print(f"Password cracked: '{found_password}'")
+            print(f"✗ Dictionary attack: Password cracked: '{found_password}' ({attempts} attempts, {time_taken:.2f}s)")
         else:
-            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+            print(f"✓ Dictionary attack: Resistant ({attempts} attempts, {time_taken:.2f}s)")
     
-    if 'hybrid' in attack_types:
-        print("\nAttempting hybrid attack...")
-        login_system = DummyLoginSystem(password)
-        base_words = ['admin', 'user', 'login', 'password', 'welcome', 'secure']
-        success, found_password, attempts, time_taken = hybrid_attack(login_system, base_words)
+    # Limited brute force
+    if 'sequential_limited' in attack_types:
+        login_system = DummyLoginSystem(password, rate_limiting, lockout_threshold)
+        char_set = string.ascii_lowercase + string.digits
+        success, found_password, attempts, time_taken = brute_force_sequential(login_system, char_set, max_length)
         
-        results['hybrid'] = {
+        results['sequential_limited'] = {
             'success': success,
             'found_password': found_password,
             'attempts': attempts,
@@ -237,9 +622,9 @@ def test_password_strength(password, max_length=4, attack_types=None):
         }
         
         if success:
-            print(f"Password cracked: '{found_password}'")
+            print(f"✗ Limited brute force: Password cracked: '{found_password}' ({attempts} attempts, {time_taken:.2f}s)")
         else:
-            print(f"Failed after {attempts} attempts and {time_taken:.2f} seconds")
+            print(f"✓ Limited brute force: Resistant ({attempts} attempts, {time_taken:.2f}s)")
     
     # Calculate overall strength score
     successful_attacks = sum(1 for attack_result in results.values() if attack_result['success'])
@@ -263,18 +648,22 @@ def test_password_strength(password, max_length=4, attack_types=None):
         rating = "Very Poor"
     
     # Final summary
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print(f"Password Strength Summary for '{password}'")
-    print("=" * 50)
+    print("=" * 60)
     print(f"Strength Score: {strength_score:.1f}/10 ({rating})")
     print(f"Length: {len(password)} characters")
     print(f"Character Types Used: {get_character_types(password)}")
     print(f"Attacks Successful: {successful_attacks}/{total_attacks}")
     
-    for attack_name, attack_result in results.items():
-        status = "Cracked" if attack_result['success'] else "Resistant"
-        print(f"- {attack_name.replace('_', ' ').title()}: {status} " +
-              f"({attack_result['attempts']} attempts, {attack_result['time_taken']:.2f} seconds)")
+    total_time = sum(result['time_taken'] for result in results.values())
+    total_attempts = sum(result['attempts'] for result in results.values())
+    
+    print(f"Total Time: {total_time:.2f} seconds")
+    print(f"Total Attempts: {total_attempts}")
+    
+    if rate_limiting:
+        print(f"Note: Rate limiting significantly slowed down attacks")
     
     return results
 
@@ -313,17 +702,42 @@ def generate_random_password(length=12, use_upper=True, use_lower=True, use_digi
 
 # Example usage
 if __name__ == "__main__":
-    print("Password Strength Tester")
-    print("=" * 50)
-    print("This tool will simulate various attacks to test password strength.")
+    print("Enhanced Password Strength Tester")
+    print("=" * 60)
+    print("This tool simulates various realistic attacks to test password strength.")
+    print("Features: Rate limiting, account lockout, advanced attack methods")
     
-    # Test examples
-    test_password_strength("abc123")
-    test_password_strength("P@ssw0rd")
+    # Test examples with different security settings
+    print("\n" + "="*60)
+    print("TESTING WITH RATE LIMITING AND ACCOUNT LOCKOUT")
+    print("="*60)
     
-    # Test a randomly generated password
-    random_password = generate_random_password()
-    test_password_strength(random_password)
+    # Test weak passwords
+    test_password_strength("admin123", rate_limiting=True, lockout_threshold=3)
+    test_password_strength("password", rate_limiting=True, lockout_threshold=5)
+    
+    # Test stronger password
+    test_password_strength("MyStr0ng!Pass", rate_limiting=True, lockout_threshold=5)
+    
+    # Test with personal info
+    personal_info = {
+        'first_name': 'admin',
+        'last_name': 'user',
+        'birth_year': '2023',
+        'company': 'test',
+        'pet_name': 'password',
+        'city': 'admin'
+    }
+    
+    print("\n" + "="*60)
+    print("TESTING WITHOUT RATE LIMITING (Faster but unrealistic)")
+    print("="*60)
+    
+    test_password_strength("test123", rate_limiting=False, personal_info=personal_info)
+    
+    print("\n" + "="*60)
+    print("INTERACTIVE TESTING")
+    print("="*60)
     
     # Let the user try their own passwords
     print("\nWould you like to test your own password? (y/n)")
@@ -333,8 +747,23 @@ if __name__ == "__main__":
         print("\nEnter a password to test (don't use a real password you use elsewhere):")
         user_password = input("> ")
         
+        print("\nEnable rate limiting? (y/n) [Recommended: y]")
+        rate_limit_response = input("> ").strip().lower()
+        enable_rate_limiting = rate_limit_response == 'y'
+        
         if user_password:
-            test_password_strength(user_password)
+            test_password_strength(user_password, rate_limiting=enable_rate_limiting)
+    
+    print("\n" + "="*60)
+    print("SECURITY RECOMMENDATIONS")
+    print("="*60)
+    print("• Use passwords with 12+ characters")
+    print("• Combine uppercase, lowercase, digits, and symbols")
+    print("• Avoid dictionary words and personal information")
+    print("• Implement rate limiting and account lockout")
+    print("• Use unique passwords for each account")
+    print("• Consider using a password manager")
+    print("• Enable two-factor authentication when available")
     
     print("\nRemember: This is a simulation for educational purposes only.")
-    print("In real situations, passwords should be protected with rate limiting, lockouts, and other security measures.")
+    print("In real situations, additional security measures should be implemented.")
